@@ -171,14 +171,39 @@ def main():
     # 7. 创建向量索引
     print("正在创建向量索引...")
     try:
+        # 检查文档是否为空
+        if not documents:
+            print("❌ 错误: 文档列表为空!")
+            return
+        
+        print(f"开始向量索引创建过程，文档数量: {len(documents)}")
+        
+        # 打印一些调试信息
+        print("正在为文档嵌入向量并存储到Milvus...")
+        
+        # 手动尝试对一个文档进行嵌入以测试
+        try:
+            print("测试单个文档嵌入...")
+            test_text = documents[0].text[:100]  # 取第一个文档的前100个字符
+            print(f"文档片段: {test_text}")
+            test_embedding = embed_model.get_text_embedding(test_text)
+            print(f"生成的嵌入向量维度: {len(test_embedding)}, 示例值: {test_embedding[:5]}...")
+            print("✅ 嵌入测试成功")
+        except Exception as embed_err:
+            print(f"❌ 嵌入测试失败: {embed_err}")
+        
+        # 创建向量索引
         index = VectorStoreIndex.from_documents(
             documents,
             vector_store=vector_store,
-            embed_model=embed_model
+            embed_model=embed_model,
+            show_progress=True  # 显示进度
         )
         print("✅ 向量索引创建成功")
     except Exception as e:
         print(f"❌ 向量索引创建失败: {e}")
+        import traceback
+        traceback.print_exc()  # 打印完整的错误堆栈
         return
 
     # 8. 检查集合统计信息
@@ -190,6 +215,37 @@ def main():
         print("  1. documents列表为空")
         print("  2. 向量嵌入过程失败")
         print("  3. 将嵌入向量存入Milvus失败")
+        
+        # 尝试直接插入一条测试数据到Milvus
+        try:
+            print("\n尝试直接插入测试数据到Milvus...")
+            from pymilvus import Collection, DataType, FieldSchema, CollectionSchema
+            
+            # 如果集合不存在，创建集合
+            if not check_collection_exists(collection_name):
+                print(f"创建测试集合 {collection_name}")
+                id_field = FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True)
+                vector_field = FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=embedding_dim)
+                text_field = FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=65535)
+                schema = CollectionSchema(fields=[id_field, vector_field, text_field], description="测试集合")
+                collection = Collection(name=collection_name, schema=schema)
+            else:
+                collection = Collection(collection_name)
+                
+            # 生成测试向量
+            test_text = "这是一条测试文本"
+            test_vector = embed_model.get_text_embedding(test_text)
+            
+            # 插入数据
+            collection.insert([
+                {"vector": test_vector, "text": test_text}
+            ])
+            
+            print("✅ 测试数据插入成功")
+            print(f"集合现在包含 {collection.num_entities} 条记录")
+        except Exception as insert_err:
+            print(f"❌ 测试数据插入失败: {insert_err}")
+            
     elif row_count != len(documents):
         print(f"⚠️ 警告: Milvus集合中的记录数({row_count})与文档数({len(documents)})不匹配!")
     else:
