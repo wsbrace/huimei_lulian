@@ -99,7 +99,7 @@ query_engine = index.as_query_engine(
 )
 
 # 8. Execute RAG query
-query = "你的查询问题"  # Replace with your specific query
+query = "列出所有问题"  # Replace with your specific query
 response = query_engine.query(query)
 print(f"Query: {query}")
 print(f"Response: {response}")
