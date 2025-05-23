@@ -8,6 +8,10 @@ from openai import OpenAI
 from typing import Any, Optional
 from pydantic import BaseModel, Field
 import pymilvus  # 添加pymilvus导入用于检查
+# 引入更多embedding选项
+from llama_index.embeddings.dashscope import DashScopeEmbedding  # 阿里云文心embedding
+from llama_index.embeddings.openai import OpenAIEmbedding  # OpenAI embedding
+
 # 添加调试函数
 def check_milvus_connection():
     """检查Milvus连接状态"""
@@ -45,6 +49,7 @@ def get_collection_stats(collection_name):
     except Exception as e:
         print(f"❌ 获取集合统计失败: {e}")
         return 0
+
 # Custom LLM for Qianwen API
 class QianwenLLM(CustomLLM, BaseModel):
     model_name: str = Field(default="qwen-plus", description="Qianwen model name")
@@ -99,6 +104,65 @@ class QianwenLLM(CustomLLM, BaseModel):
         # Streaming not implemented for simplicity; add if needed
         raise NotImplementedError("Streaming not supported in this example")
 
+# 获取适用的embedding模型
+def get_embedding_model():
+    """获取可用的embedding模型"""
+    embedding_dim = 0
+    
+    # 尝试使用阿里云文心向量模型
+    try:
+        print("正在配置阿里云文心向量模型...")
+        # 检查API密钥是否存在
+        if not os.getenv("DASHSCOPE_API_KEY"):
+            print("⚠️ 警告: 未设置DASHSCOPE_API_KEY环境变量")
+            raise ValueError("需要设置DASHSCOPE_API_KEY环境变量")
+            
+        # 使用阿里云文心向量模型
+        embed_model = DashScopeEmbedding(
+            model_name="text-embedding-v2",  # 阿里云文心向量模型
+            api_key=os.getenv("DASHSCOPE_API_KEY")
+        )
+        embedding_dim = 1536  # 文心向量模型维度是1536
+        print("✅ 阿里云文心向量模型配置成功")
+        return embed_model, embedding_dim
+    except Exception as e:
+        print(f"❌ 阿里云embedding配置失败: {e}")
+    
+    # 尝试使用OpenAI向量模型
+    try:
+        print("尝试使用OpenAI向量模型...")
+        # 检查API密钥是否存在
+        if not os.getenv("OPENAI_API_KEY"):
+            print("⚠️ 警告: 未设置OPENAI_API_KEY环境变量")
+            raise ValueError("需要设置OPENAI_API_KEY环境变量")
+            
+        # 使用OpenAI向量模型
+        embed_model = OpenAIEmbedding(
+            model="text-embedding-3-small",  # OpenAI向量模型
+            api_key=os.getenv("OPENAI_API_KEY")
+        )
+        embedding_dim = 1536  # OpenAI向量模型维度是1536
+        print("✅ OpenAI向量模型配置成功")
+        return embed_model, embedding_dim
+    except Exception as e2:
+        print(f"❌ OpenAI embedding配置失败: {e2}")
+    
+    # 作为最后尝试，使用本地模型（如果可用）
+    try:
+        print("尝试使用本地向量模型...")
+        # 使用sentence-transformers模型，这个更常见且更容易在本地下载
+        embed_model = HuggingFaceEmbedding(
+            model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"  # 支持中文的多语言模型
+        )
+        embedding_dim = 384  # 此模型的维度
+        print("✅ 本地向量模型配置成功")
+        return embed_model, embedding_dim
+    except Exception as e3:
+        print(f"❌ 本地embedding配置失败: {e3}")
+    
+    print("❌ 所有embedding模型配置失败")
+    return None, 0
+
 # 1. Configure environment variables
 os.environ["TOKENIZERS_PARALLELISM"] = "false"  # Avoid tokenizer parallelism warnings
 os.environ["DASHSCOPE_API_KEY"] = os.getenv("DASHSCOPE_API_KEY")  # Ensure API key is set
@@ -124,10 +188,12 @@ if len(documents) > 3:
 if not check_milvus_connection():
     print("请确保Milvus服务正在运行")
     exit(1)
-# 3. Configure embedding model
-# Using BAAI/bge-small-zh-v1.5 for Chinese documents
-embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-zh-v1.5")
-print("✅ Embedding模型配置成功")
+# 3. 获取合适的embedding模型
+embed_model, embedding_dim = get_embedding_model()
+if embed_model is None:
+    print("❌ 无法配置任何embedding模型，退出程序")
+    exit(1)
+
 # 6. 配置Milvus向量存储
 collection_name = "rag_collection"
 print(f"检查集合 {collection_name} 是否已存在")
@@ -136,7 +202,7 @@ check_collection_exists(collection_name)
 vector_store = MilvusVectorStore(
     uri="http://localhost:19530",  # Milvus service address
     collection_name="rag_collection",  # Collection name
-    dim=384,  # Embedding dimension, must match the embedding model (bge-small-zh-v1.5 is 384)
+    dim=embedding_dim,  # 使用动态获取的向量维度
     overwrite=True  # Overwrite collection if it exists (for development)
 )
 print("✅ 向量存储配置成功")
