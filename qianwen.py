@@ -5,16 +5,19 @@ from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.core.llms import CustomLLM, LLMMetadata
 from llama_index.core.llms.callbacks import llm_completion_callback
 from openai import OpenAI
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
+from pydantic import BaseModel, Field
 
 # Custom LLM for Qianwen API
-class QianwenLLM(CustomLLM):
-    def __init__(self, model_name: str = "qwen-plus", api_key: str = None, api_base: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"):
-        super().__init__()
-        self.model_name = model_name
-        self.api_key = api_key or os.getenv("DASHSCOPE_API_KEY")
-        self.api_base = api_base
-        self.client = OpenAI(api_key=self.api_key, base_url=self.api_base)
+class QianwenLLM(CustomLLM, BaseModel):
+    model_name: str = Field(default="qwen-plus", description="Qianwen model name")
+    api_key: Optional[str] = Field(default=None, description="API key for Qianwen")
+    api_base: str = Field(default="https://dashscope.aliyuncs.com/compatible-mode/v1", description="Qianwen API base URL")
+    client: Any = Field(default=None, description="OpenAI client for Qianwen API")
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        self.client = OpenAI(api_key=self.api_key or os.getenv("DASHSCOPE_API_KEY"), base_url=self.api_base)
 
     @property
     def metadata(self) -> LLMMetadata:
@@ -87,7 +90,7 @@ index = VectorStoreIndex.from_documents(
 )
 
 # 6. Configure Qianwen API using custom LLM
-llm = QianwenLLM(model_name="qwen-plus")
+llm = QianwenLLM()
 
 # 7. Create query engine
 query_engine = index.as_query_engine(
@@ -96,7 +99,7 @@ query_engine = index.as_query_engine(
 )
 
 # 8. Execute RAG query
-query = "列出所有问题"  # Replace with your specific query
+query = "你的查询问题"  # Replace with your specific query
 response = query_engine.query(query)
 print(f"Query: {query}")
 print(f"Response: {response}")
