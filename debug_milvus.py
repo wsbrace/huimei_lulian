@@ -114,7 +114,7 @@ def main():
             try:
                 results = collection.search(
                     data=[random_vector],
-                    anns_field=vector_field,
+                    anns_field="embedding",
                     param=search_params,
                     limit=3,
                     output_fields=["doc_id", "text"]

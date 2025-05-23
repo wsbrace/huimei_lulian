@@ -57,9 +57,10 @@ def get_collection(collection_name, dim):
         
         # 创建集合
         fields = [
-            FieldSchema(name="doc_id", dtype=DataType.VARCHAR, max_length=100, is_primary=True, auto_id=False),  # 使用doc_id作为字段名
+            FieldSchema(name="id", dtype=DataType.VARCHAR, max_length=100, is_primary=True, auto_id=False),  # 使用VARCHAR类型
+            FieldSchema(name="doc_id", dtype=DataType.VARCHAR, max_length=100),  # 额外的doc_id字段
             FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=65535),
-            FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=dim)
+            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=dim)  # 向量字段名为embedding
         ]
         schema = CollectionSchema(fields=fields, description="文档集合")
         collection = Collection(name=collection_name, schema=schema)
@@ -70,7 +71,7 @@ def get_collection(collection_name, dim):
             "index_type": "HNSW",
             "params": {"M": 8, "efConstruction": 64}
         }
-        collection.create_index(field_name="vector", index_params=index_params)
+        collection.create_index(field_name="embedding", index_params=index_params)  # 索引embedding字段
         print(f"✅ 集合 {collection_name} 创建成功，向量维度: {dim}")
         return collection
     except Exception as e:
@@ -125,7 +126,7 @@ def import_documents(documents, collection, embed_model):
         
         # 准备插入数据
         entities = [
-            {"doc_id": f"doc_{i+j:06d}", "text": texts[j], "vector": vectors[j]}  # 使用doc_id字段
+            {"id": f"id_{i+j:06d}", "doc_id": f"doc_{i+j:06d}", "text": texts[j], "embedding": vectors[j]}  # 使用embedding字段名
             for j in range(len(texts))
         ]
         
@@ -143,6 +144,126 @@ def import_documents(documents, collection, embed_model):
     print(f"导入完成，总共导入 {total_imported} 条记录")
     return total_imported
 
+# 为LlamaIndex创建一个特殊的导入方法
+def import_for_llamaindex(data_dir, collection_name, embed_model):
+    """为LlamaIndex创建集合并导入数据，确保ID字段正确"""
+    from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, StorageContext
+    from llama_index.core.schema import TextNode
+    
+    print("\n专为LlamaIndex创建集合并导入数据...")
+    
+    # 1. 连接到Milvus
+    connections.connect("default", host="localhost", port="19530")
+    
+    # 2. 检查并创建集合
+    dim = embed_model.get_text_embedding_dimension()
+    
+    # 如果集合存在，先删除
+    if utility.has_collection(collection_name):
+        print(f"删除已存在的集合 {collection_name}")
+        utility.drop_collection(collection_name)
+    
+    # 创建集合字段
+    fields = [
+        FieldSchema(name="id", dtype=DataType.VARCHAR, max_length=100, is_primary=True, auto_id=False),
+        FieldSchema(name="doc_id", dtype=DataType.VARCHAR, max_length=100),
+        FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=65535),
+        FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=dim)
+    ]
+    schema = CollectionSchema(fields=fields, description="文档集合")
+    collection = Collection(name=collection_name, schema=schema)
+    
+    # 创建索引
+    index_params = {
+        "metric_type": "L2",
+        "index_type": "HNSW",
+        "params": {"M": 8, "efConstruction": 64}
+    }
+    collection.create_index(field_name="embedding", index_params=index_params)
+    print(f"✅ 创建集合成功，向量维度: {dim}")
+    
+    # 3. 加载文档
+    if not os.path.exists(data_dir):
+        print(f"❌ 数据目录 {data_dir} 不存在")
+        return
+    
+    documents = SimpleDirectoryReader(data_dir).load_data()
+    print(f"✅ 加载了 {len(documents)} 个文档")
+    
+    # 4. 创建节点
+    nodes = []
+    for i, doc in enumerate(documents):
+        node_id = f"doc_{i:06d}"
+        node = TextNode(
+            text=doc.text,
+            id_=node_id,
+            metadata={"doc_id": node_id}
+        )
+        nodes.append(node)
+    
+    print(f"创建了 {len(nodes)} 个文档节点")
+    
+    # 5. 生成嵌入向量和插入数据
+    batch_size = 5
+    total_inserted = 0
+    
+    for i in range(0, len(nodes), batch_size):
+        batch = nodes[i:i+batch_size]
+        print(f"处理批次 {i//batch_size + 1}/{(len(nodes)-1)//batch_size + 1}")
+        
+        # 生成嵌入向量
+        entities = []
+        for j, node in enumerate(batch):
+            try:
+                vector = embed_model.get_text_embedding(node.text)
+                entities.append({
+                    "id": node.id_,
+                    "doc_id": node.metadata.get("doc_id", node.id_),
+                    "text": node.text,
+                    "embedding": vector
+                })
+                print(f"  处理节点 {i+j+1}/{len(nodes)}: id={node.id_}")
+            except Exception as e:
+                print(f"❌ 生成嵌入向量失败: {e}")
+        
+        # 插入数据
+        try:
+            result = collection.insert(entities)
+            insert_count = len(result.primary_keys)
+            total_inserted += insert_count
+            print(f"✅ 批次 {i//batch_size + 1} 成功插入 {insert_count} 条记录")
+        except Exception as e:
+            print(f"❌ 插入数据失败: {e}")
+    
+    # 刷新集合
+    collection.flush()
+    print(f"✅ 总共向Milvus插入 {total_inserted} 条记录")
+    
+    # 6. 验证插入结果
+    try:
+        collection.load()
+        count = collection.num_entities
+        print(f"✅ 集合 {collection_name} 中有 {count} 条记录")
+        
+        if count > 0:
+            print("\n查询示例记录:")
+            results = collection.query(expr="", output_fields=["id", "doc_id", "text"], limit=1)
+            if results:
+                for i, r in enumerate(results):
+                    print(f"记录 {i+1}:")
+                    print(f"  ID: {r.get('id', 'N/A')}")
+                    print(f"  doc_id: {r.get('doc_id', 'N/A')}")
+                    text = r.get('text', 'N/A')
+                    if len(text) > 100:
+                        text = text[:100] + "..."
+                    print(f"  文本: {text}")
+            else:
+                print("查询结果为空")
+    except Exception as e:
+        print(f"❌ 验证插入结果失败: {e}")
+    
+    return total_inserted
+
 def main():
     # 1. 连接Milvus
     if not connect_milvus():
@@ -156,39 +277,12 @@ def main():
     
     # 3. 创建集合
     collection_name = "rag_collection"
-    collection = get_collection(collection_name, dim)
-    if not collection:
-        return
     
-    # 4. 加载文档
+    # 4. 使用LlamaIndex兼容方式导入数据
     data_dir = "./data"
-    documents = load_documents(data_dir)
-    if not documents:
-        return
+    import_for_llamaindex(data_dir, collection_name, embed_model)
     
-    # 5. 导入文档
-    imported_count = import_documents(documents, collection, embed_model)
-    
-    # 6. 验证导入结果
-    collection.load()
-    count = collection.num_entities
-    print(f"\n验证结果: 集合 {collection_name} 现有 {count} 条记录")
-    if count > 0:
-        print("\n尝试查询部分记录...")
-        results = collection.query(expr="doc_id != ''", output_fields=["doc_id", "text"], limit=3)
-        if results:
-            print(f"查询到 {len(results)} 条记录:")
-            for i, r in enumerate(results):
-                print(f"记录 {i+1}:")
-                print(f"  ID: {r.get('doc_id', 'N/A')}")
-                text = r.get('text', 'N/A')
-                if isinstance(text, str) and len(text) > 100:
-                    text = text[:100] + "..."
-                print(f"  文本: {text}")
-        else:
-            print("查询结果为空")
-    else:
-        print("集合中没有记录，导入失败")
+    print("\n✅ 所有操作完成！")
 
 if __name__ == "__main__":
     main() 

@@ -1,5 +1,5 @@
 import os
-from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, StorageContext
 from llama_index.vector_stores.milvus import MilvusVectorStore
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.core.llms import CustomLLM, LLMMetadata
@@ -11,6 +11,10 @@ import pymilvus  # 添加pymilvus导入用于检查
 # 引入更多embedding选项
 from llama_index.embeddings.dashscope import DashScopeEmbedding  # 阿里云文心embedding
 from llama_index.embeddings.openai import OpenAIEmbedding  # OpenAI embedding
+from llama_index.core.node_parser import SentenceSplitter
+from llama_index.core.ingestion import IngestionPipeline, IngestionCache
+from llama_index.core.schema import Document, TextNode
+from pymilvus import Collection
 
 # 添加调试函数
 def check_milvus_connection():
@@ -209,7 +213,8 @@ vector_store = MilvusVectorStore(
     primary_field="id",  # 使用id作为主键字段
     primary_field_type=pymilvus.DataType.VARCHAR,  # 指定主键字段类型为VARCHAR
     auto_id=False,  # 禁用自动ID生成，需要手动提供
-    content_field="text"  # 指定内容字段
+    content_field="text",  # 指定内容字段
+    embedding_field="embedding"  # 指定向量字段为embedding
 )
 print("✅ 向量存储配置成功")
 # 5. Create vector index
@@ -232,24 +237,61 @@ try:
 except Exception as e:
     print(f"❌ 向量生成测试失败: {e}")
 
-index = VectorStoreIndex.from_documents(
-    documents,
-    vector_store=vector_store,
-    embed_model=embed_model,
-    show_progress=True  # 显示进度
-)
-print("✅ 向量索引创建成功")
-# 8. 检查集合统计信息
-print("检查Milvus集合中的记录数...")
-row_count = get_collection_stats(collection_name)
-if row_count == 0:
-    print("⚠️ 警告: Milvus集合中没有记录!")
-    print("可能的原因:")
-    print("  1. documents列表为空")
-    print("  2. 向量嵌入过程失败")
-    print("  3. 将嵌入向量存入Milvus失败")
-elif row_count != len(documents):
-    print(f"⚠️ 警告: Milvus集合中的记录数({row_count})与文档数({len(documents)})不匹配!")
+# 创建存储上下文
+storage_context = StorageContext.from_defaults(vector_store=vector_store)
+
+# 尝试手动创建文档节点并存储
+print("尝试手动存储文档...")
+nodes = []
+for i, doc in enumerate(documents):
+    node = TextNode(
+        text=doc.text,
+        id_=f"id_{i:06d}",
+        metadata={"doc_id": f"doc_{i:06d}"}
+    )
+    nodes.append(node)
+
+print(f"创建了 {len(nodes)} 个文档节点")
+
+# 创建索引
+try:
+    # 使用存储上下文创建索引
+    index = VectorStoreIndex(
+        nodes,
+        storage_context=storage_context,
+        embed_model=embed_model,
+        show_progress=True
+    )
+    print("✅ 向量索引创建成功")
+except Exception as e:
+    print(f"❌ 向量索引创建失败: {e}")
+    import traceback
+    traceback.print_exc()
+
+# 检查集合中的记录数
+try:
+    collection = Collection("rag_collection")
+    collection.load()
+    count = collection.num_entities
+    print(f"存储后集合中的记录数: {count}")
+    
+    if count > 0:
+        print("尝试查询一些记录...")
+        results = collection.query(expr="", output_fields=["id", "doc_id", "text"], limit=3)
+        if results:
+            print(f"查询到 {len(results)} 条记录:")
+            for i, r in enumerate(results):
+                print(f"记录 {i+1}:")
+                print(f"  ID: {r.get('id', 'N/A')}")
+                print(f"  doc_id: {r.get('doc_id', 'N/A')}")
+                text = r.get('text', 'N/A')
+                if isinstance(text, str) and len(text) > 100:
+                    text = text[:100] + "..."
+                print(f"  文本: {text}")
+        else:
+            print("查询结果为空")
+except Exception as e:
+    print(f"检查记录数失败: {e}")
 
 # 6. Configure Qianwen API using custom LLM
 llm = QianwenLLM()
