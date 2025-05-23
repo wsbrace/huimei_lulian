@@ -227,7 +227,7 @@ def main():
                 # 创建包含id和doc_id两个字段的集合
                 id_field = FieldSchema(name="id", dtype=DataType.VARCHAR, max_length=100, is_primary=True, auto_id=False)  # 主键id字段
                 doc_id_field = FieldSchema(name="doc_id", dtype=DataType.VARCHAR, max_length=100)  # 额外的doc_id字段
-                vector_field = FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=embedding_dim)
+                vector_field = FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=embedding_dim)  # 向量字段名为embedding
                 text_field = FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=65535)
                 schema = CollectionSchema(fields=[id_field, doc_id_field, vector_field, text_field], description="测试集合")
                 collection = Collection(name=collection_name, schema=schema)
@@ -246,7 +246,7 @@ def main():
             # 插入数据，根据集合结构提供必要的字段
             insert_data = {
                 "doc_id": "test_id_001", 
-                "vector": test_vector, 
+                "embedding": test_vector,  # 使用embedding作为向量字段名
                 "text": test_text
             }
             
