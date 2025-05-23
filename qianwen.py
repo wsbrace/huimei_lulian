@@ -2,7 +2,7 @@ import os
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
 from llama_index.vector_stores.milvus import MilvusVectorStore
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-from llama_index.llms.openai_like import OpenAILikeLLM
+from llama_index.llms.openai import OpenAI
 
 # 1. Configure environment variables
 os.environ["TOKENIZERS_PARALLELISM"] = "false"  # Avoid tokenizer parallelism warnings
@@ -32,15 +32,14 @@ index = VectorStoreIndex.from_documents(
 )
 
 # 6. Configure Qianwen API using OpenAI-compatible client
-llm = OpenAILikeLLM(
+llm = OpenAI(
     model="qwen-plus",  # Choose model: qwen-turbo, qwen-plus, or qwen-max
     api_key=os.getenv("DASHSCOPE_API_KEY"),
     api_base="https://dashscope.aliyuncs.com/compatible-mode/v1",
     max_tokens=512,  # Maximum generated tokens
     temperature=0.7,
     top_p=0.9,
-    is_chat_model=True,
-    extra_body={"enable_thinking": False}  # Required for Qwen commercial API
+    additional_kwargs={"enable_thinking": False}  # Required for Qwen commercial API
 )
 
 # 7. Create query engine
@@ -50,7 +49,7 @@ query_engine = index.as_query_engine(
 )
 
 # 8. Execute RAG query
-query = "列出所有的问题"  # Replace with your specific query
+query = "你的查询问题"  # Replace with your specific query
 response = query_engine.query(query)
 print(f"Query: {query}")
 print(f"Response: {response}")
