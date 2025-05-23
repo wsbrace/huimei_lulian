@@ -34,10 +34,18 @@ def get_collection_stats(collection_name):
         from pymilvus import Collection
         collection = Collection(collection_name)
         collection.load()
-        stats = collection.stats
         row_count = collection.num_entities
         print(f"✅ 集合 {collection_name} 包含 {row_count} 条记录")
-        print(f"集合统计信息: {stats}")
+        
+        # 尝试查询一些记录以确认数据存在
+        if row_count > 0:
+            print("尝试查询部分记录...")
+            search_params = {"metric_type": "L2", "params": {"nprobe": 10}}
+            results = collection.query(expr="id >= 0", limit=3, output_fields=["id"])
+            if results:
+                print(f"查询到记录: {results}")
+            else:
+                print("⚠️ 警告: 查询返回空结果")
         return row_count
     except Exception as e:
         print(f"❌ 获取集合统计失败: {e}")
