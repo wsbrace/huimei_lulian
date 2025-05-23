@@ -224,22 +224,38 @@ def main():
             # 如果集合不存在，创建集合
             if not check_collection_exists(collection_name):
                 print(f"创建测试集合 {collection_name}")
-                id_field = FieldSchema(name="doc_id", dtype=DataType.VARCHAR, max_length=100, is_primary=True, auto_id=False)  # 使用doc_id作为字段名
+                # 创建包含id和doc_id两个字段的集合
+                id_field = FieldSchema(name="id", dtype=DataType.VARCHAR, max_length=100, is_primary=True, auto_id=False)  # 主键id字段
+                doc_id_field = FieldSchema(name="doc_id", dtype=DataType.VARCHAR, max_length=100)  # 额外的doc_id字段
                 vector_field = FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=embedding_dim)
                 text_field = FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=65535)
-                schema = CollectionSchema(fields=[id_field, vector_field, text_field], description="测试集合")
+                schema = CollectionSchema(fields=[id_field, doc_id_field, vector_field, text_field], description="测试集合")
                 collection = Collection(name=collection_name, schema=schema)
             else:
                 collection = Collection(collection_name)
+                
+            # 获取集合的字段信息
+            print("集合字段信息:")
+            for field in collection.schema.fields:
+                print(f"  字段: {field.name}, 类型: {field.dtype}, 参数: {field.params}")
                 
             # 生成测试向量
             test_text = "这是一条测试文本"
             test_vector = embed_model.get_text_embedding(test_text)
             
-            # 插入数据，使用doc_id字段
-            collection.insert([
-                {"doc_id": "test_id_001", "vector": test_vector, "text": test_text}
-            ])
+            # 插入数据，根据集合结构提供必要的字段
+            insert_data = {
+                "doc_id": "test_id_001", 
+                "vector": test_vector, 
+                "text": test_text
+            }
+            
+            # 检查字段名称，同时添加id字段
+            if any(field.name == "id" for field in collection.schema.fields):
+                insert_data["id"] = "test_primary_id_001"
+                
+            print(f"插入数据: {insert_data.keys()}")
+            collection.insert([insert_data])
             
             # 刷新以确保数据可见
             collection.flush()
@@ -250,14 +266,23 @@ def main():
             
             # 查询验证
             try:
-                results = collection.query(expr="doc_id != ''", output_fields=["doc_id", "text"], limit=3)
+                query_fields = ["text"]
+                if any(field.name == "doc_id" for field in collection.schema.fields):
+                    query_fields.append("doc_id")
+                if any(field.name == "id" for field in collection.schema.fields):
+                    query_fields.append("id")
+                    
+                results = collection.query(expr="", output_fields=query_fields, limit=3)
                 if results:
                     print(f"查询到 {len(results)} 条记录:")
                     for idx, r in enumerate(results):
                         print(f"记录 {idx+1}:")
-                        doc_id = r.get('doc_id', 'N/A')
+                        if "id" in r:
+                            print(f"  ID: {r.get('id', 'N/A')}")
+                        if "doc_id" in r:
+                            print(f"  doc_id: {r.get('doc_id', 'N/A')}")
                         text = r.get('text', 'N/A')
-                        print(f"  ID: {doc_id}, 文本: {text[:50]}...")
+                        print(f"  文本: {text[:50]}...")
                 else:
                     print("查询结果为空")
             except Exception as query_err:

@@ -206,9 +206,10 @@ vector_store = MilvusVectorStore(
     overwrite=True,  # Overwrite collection if it exists (for development)
     index_params={"metric_type": "L2", "index_type": "HNSW", "params": {"M": 8, "efConstruction": 64}},
     consistency_level="Strong",  # 确保强一致性
-    primary_field="doc_id",  # 使用doc_id作为主键字段
+    primary_field="id",  # 使用id作为主键字段
     primary_field_type=pymilvus.DataType.VARCHAR,  # 指定主键字段类型为VARCHAR
-    auto_id=False  # 禁用自动ID生成，需要手动提供
+    auto_id=False,  # 禁用自动ID生成，需要手动提供
+    content_field="text"  # 指定内容字段
 )
 print("✅ 向量存储配置成功")
 # 5. Create vector index
