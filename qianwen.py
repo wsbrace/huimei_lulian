@@ -203,15 +203,38 @@ vector_store = MilvusVectorStore(
     uri="http://localhost:19530",  # Milvus service address
     collection_name="rag_collection",  # Collection name
     dim=embedding_dim,  # 使用动态获取的向量维度
-    overwrite=True  # Overwrite collection if it exists (for development)
+    overwrite=True,  # Overwrite collection if it exists (for development)
+    index_params={"metric_type": "L2", "index_type": "HNSW", "params": {"M": 8, "efConstruction": 64}},
+    consistency_level="Strong",  # 确保强一致性
+    primary_field="id",  # 指定主键字段
+    auto_id=False  # 禁用自动ID生成，需要手动提供
 )
 print("✅ 向量存储配置成功")
 # 5. Create vector index
 print("正在创建向量索引...")
+
+# 在index构建前打印一些调试信息
+print(f"将要处理 {len(documents)} 个文档...")
+print(f"向量模型: {embed_model.__class__.__name__}")
+print(f"向量维度: {embedding_dim}")
+print(f"向量存储: {vector_store.__class__.__name__}")
+
+# 测试向量生成
+try:
+    print("测试向量生成...")
+    sample_text = documents[0].text[:100]
+    print(f"样本文本: {sample_text}")
+    sample_vector = embed_model.get_text_embedding(sample_text)
+    print(f"样本向量维度: {len(sample_vector)}")
+    print("✅ 向量生成测试成功")
+except Exception as e:
+    print(f"❌ 向量生成测试失败: {e}")
+
 index = VectorStoreIndex.from_documents(
     documents,
     vector_store=vector_store,
-    embed_model=embed_model
+    embed_model=embed_model,
+    show_progress=True  # 显示进度
 )
 print("✅ 向量索引创建成功")
 # 8. 检查集合统计信息

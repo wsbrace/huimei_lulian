@@ -57,7 +57,7 @@ def get_collection(collection_name, dim):
         
         # 创建集合
         fields = [
-            FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
+            FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=False),  # 改为手动指定ID
             FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=65535),
             FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=dim)
         ]
@@ -125,7 +125,7 @@ def import_documents(documents, collection, embed_model):
         
         # 准备插入数据
         entities = [
-            {"text": texts[j], "vector": vectors[j]}
+            {"id": int(100000 + j + i), "text": texts[j], "vector": vectors[j]}  # 手动指定唯一ID
             for j in range(len(texts))
         ]
         

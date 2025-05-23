@@ -224,7 +224,7 @@ def main():
             # 如果集合不存在，创建集合
             if not check_collection_exists(collection_name):
                 print(f"创建测试集合 {collection_name}")
-                id_field = FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True)
+                id_field = FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=False)  # 改为手动指定ID
                 vector_field = FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=embedding_dim)
                 text_field = FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=65535)
                 schema = CollectionSchema(fields=[id_field, vector_field, text_field], description="测试集合")
@@ -236,9 +236,9 @@ def main():
             test_text = "这是一条测试文本"
             test_vector = embed_model.get_text_embedding(test_text)
             
-            # 插入数据
+            # 插入数据，手动指定ID
             collection.insert([
-                {"vector": test_vector, "text": test_text}
+                {"id": 100001, "vector": test_vector, "text": test_text}
             ])
             
             print("✅ 测试数据插入成功")
