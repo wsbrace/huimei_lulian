@@ -57,7 +57,7 @@ def get_collection(collection_name, dim):
         
         # 创建集合
         fields = [
-            FieldSchema(name="id", dtype=DataType.VARCHAR, max_length=100, is_primary=True, auto_id=False),  # 使用VARCHAR类型
+            FieldSchema(name="doc_id", dtype=DataType.VARCHAR, max_length=100, is_primary=True, auto_id=False),  # 使用doc_id作为字段名
             FieldSchema(name="text", dtype=DataType.VARCHAR, max_length=65535),
             FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=dim)
         ]
@@ -125,7 +125,7 @@ def import_documents(documents, collection, embed_model):
         
         # 准备插入数据
         entities = [
-            {"id": f"doc_{i+j:06d}", "text": texts[j], "vector": vectors[j]}  # 使用字符串ID
+            {"doc_id": f"doc_{i+j:06d}", "text": texts[j], "vector": vectors[j]}  # 使用doc_id字段
             for j in range(len(texts))
         ]
         
@@ -175,12 +175,12 @@ def main():
     print(f"\n验证结果: 集合 {collection_name} 现有 {count} 条记录")
     if count > 0:
         print("\n尝试查询部分记录...")
-        results = collection.query(expr="id >= 0", output_fields=["id", "text"], limit=3)
+        results = collection.query(expr="doc_id >= 0", output_fields=["doc_id", "text"], limit=3)
         if results:
             print(f"查询到 {len(results)} 条记录:")
             for i, r in enumerate(results):
                 print(f"记录 {i+1}:")
-                print(f"  ID: {r.get('id', 'N/A')}")
+                print(f"  ID: {r.get('doc_id', 'N/A')}")
                 text = r.get('text', 'N/A')
                 if isinstance(text, str) and len(text) > 100:
                     text = text[:100] + "..."
