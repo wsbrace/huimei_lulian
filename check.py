@@ -241,8 +241,28 @@ def main():
                 {"doc_id": "test_id_001", "vector": test_vector, "text": test_text}
             ])
             
+            # 刷新以确保数据可见
+            collection.flush()
+            
+            # 获取集合信息
             print("✅ 测试数据插入成功")
             print(f"集合现在包含 {collection.num_entities} 条记录")
+            
+            # 查询验证
+            try:
+                results = collection.query(expr="doc_id != ''", output_fields=["doc_id", "text"], limit=3)
+                if results:
+                    print(f"查询到 {len(results)} 条记录:")
+                    for idx, r in enumerate(results):
+                        print(f"记录 {idx+1}:")
+                        doc_id = r.get('doc_id', 'N/A')
+                        text = r.get('text', 'N/A')
+                        print(f"  ID: {doc_id}, 文本: {text[:50]}...")
+                else:
+                    print("查询结果为空")
+            except Exception as query_err:
+                print(f"查询失败: {query_err}")
+                
         except Exception as insert_err:
             print(f"❌ 测试数据插入失败: {insert_err}")
             

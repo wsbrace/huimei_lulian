@@ -39,10 +39,15 @@ def main():
     collection = Collection(collection_name)
     collection.load()
     
+    # 检查集合字段
+    print("\n集合字段信息:")
+    for field in collection.schema.fields:
+        print(f"字段: {field.name}, 类型: {field.dtype}, 参数: {field.params}")
+    
     # 6. 获取记录数
     try:
         count = collection.num_entities
-        print(f"✅ 集合 {collection_name} 包含 {count} 条记录")
+        print(f"\n✅ 集合 {collection_name} 包含 {count} 条记录")
         
         if count == 0:
             print("⚠️ 警告: 集合中没有数据，请检查索引创建过程")
@@ -50,23 +55,42 @@ def main():
             
         # 7. 查询部分记录
         print("\n正在查询部分记录...")
-        results = collection.query(
-            expr="id >= 0",  # 匹配所有记录
-            output_fields=["id", "text"],  # 只返回id和text字段
-            limit=3  # 限制返回3条记录
-        )
-        
-        if results:
-            print(f"✅ 查询到 {len(results)} 条记录:")
-            for idx, r in enumerate(results):
-                print(f"\n记录 {idx+1}:")
-                print(f"  ID: {r.get('id', 'N/A')}")
-                text = r.get('text', 'N/A')
-                if isinstance(text, str) and len(text) > 100:
-                    text = text[:100] + "..."
-                print(f"  文本: {text}")
-        else:
-            print("⚠️ 警告: 查询结果为空")
+        try:
+            results = collection.query(
+                expr="doc_id != ''",  # 匹配所有非空doc_id
+                output_fields=["doc_id", "text"],  # 只返回doc_id和text字段
+                limit=3  # 限制返回3条记录
+            )
+            
+            if results:
+                print(f"✅ 查询到 {len(results)} 条记录:")
+                for idx, r in enumerate(results):
+                    print(f"\n记录 {idx+1}:")
+                    print(f"  ID: {r.get('doc_id', 'N/A')}")
+                    text = r.get('text', 'N/A')
+                    if isinstance(text, str) and len(text) > 100:
+                        text = text[:100] + "..."
+                    print(f"  文本: {text}")
+            else:
+                print("⚠️ 警告: 查询结果为空")
+        except Exception as query_err:
+            print(f"❌ 查询失败: {query_err}")
+            print("尝试直接列出集合中的记录...")
+            try:
+                # 如果查询失败，尝试使用不同的方法查询
+                import random
+                import time
+                query_id = f"query_{int(time.time())}"
+                collection.create_index(field_name="doc_id", index_params={"index_type": "FLAT"})
+                results = collection.query(expr="", output_fields=["doc_id", "text"], limit=3)
+                if results:
+                    print(f"✅ 获取到 {len(results)} 条记录")
+                    for idx, r in enumerate(results):
+                        print(f"记录 {idx+1}: {r}")
+                else:
+                    print("⚠️ 获取记录为空")
+            except Exception as e2:
+                print(f"❌ 再次查询失败: {e2}")
         
         # 8. 尝试进行向量搜索
         print("\n尝试进行向量搜索(随机向量)...")
@@ -93,14 +117,14 @@ def main():
                     anns_field=vector_field,
                     param=search_params,
                     limit=3,
-                    output_fields=["id", "text"]
+                    output_fields=["doc_id", "text"]
                 )
                 
                 if results and results[0]:
                     print(f"✅ 搜索到 {len(results[0])} 条记录:")
                     for idx, hit in enumerate(results[0]):
                         print(f"\n结果 {idx+1} (距离: {hit.distance}):")
-                        print(f"  ID: {hit.id}")
+                        print(f"  ID: {hit.entity.get('doc_id', 'N/A')}")
                         text = hit.entity.get('text', 'N/A')
                         if isinstance(text, str) and len(text) > 100:
                             text = text[:100] + "..."

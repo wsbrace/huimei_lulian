@@ -175,7 +175,7 @@ def main():
     print(f"\n验证结果: 集合 {collection_name} 现有 {count} 条记录")
     if count > 0:
         print("\n尝试查询部分记录...")
-        results = collection.query(expr="doc_id >= 0", output_fields=["doc_id", "text"], limit=3)
+        results = collection.query(expr="doc_id != ''", output_fields=["doc_id", "text"], limit=3)
         if results:
             print(f"查询到 {len(results)} 条记录:")
             for i, r in enumerate(results):
