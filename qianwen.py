@@ -1,7 +1,7 @@
 import os
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
 from llama_index.vector_stores.milvus import MilvusVectorStore
-from lama_index.llms.dashscope import DashScopeLLM
+from llama_index.llms.dashscope import DashScopeLLM
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 
 # 1. Configure environment variables
