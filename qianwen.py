@@ -2,7 +2,62 @@ import os
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
 from llama_index.vector_stores.milvus import MilvusVectorStore
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-from llama_index.llms.openai import OpenAI
+from llama_index.core.llms import CustomLLM, LLMMetadata
+from llama_index.core.llms.callbacks import llm_completion_callback
+from openai import OpenAI
+from typing import Any, Dict, List, Optional
+
+# Custom LLM for Qianwen API
+class QianwenLLM(CustomLLM):
+    def __init__(self, model_name: str = "qwen-plus", api_key: str = None, api_base: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"):
+        super().__init__()
+        self.model_name = model_name
+        self.api_key = api_key or os.getenv("DASHSCOPE_API_KEY")
+        self.api_base = api_base
+        self.client = OpenAI(api_key=self.api_key, base_url=self.api_base)
+
+    @property
+    def metadata(self) -> LLMMetadata:
+        return LLMMetadata(
+            context_window=8192,  # Adjust based on qwen-plus context window
+            num_output=512,
+            model_name=self.model_name,
+            is_chat_model=True
+        )
+
+    @llm_completion_callback()
+    def complete(self, prompt: str, **kwargs: Any) -> Any:
+        response = self.client.chat.completions.create(
+            model=self.model_name,
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=512,
+            temperature=0.7,
+            top_p=0.9,
+            extra_body={"enable_thinking": False}
+        )
+        return response.choices[0].message.content
+
+    @llm_completion_callback()
+    async def acomplete(self, prompt: str, **kwargs: Any) -> Any:
+        response = await self.client.chat.completions.create(
+            model=self.model_name,
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=512,
+            temperature=0.7,
+            top_p=0.9,
+            extra_body={"enable_thinking": False}
+        )
+        return response.choices[0].message.content
+
+    def stream_complete(self, prompt: str, **kwargs: Any) -> Any:
+        # Streaming not implemented for simplicity; add if needed
+        raise NotImplementedError("Streaming not supported in this example")
 
 # 1. Configure environment variables
 os.environ["TOKENIZERS_PARALLELISM"] = "false"  # Avoid tokenizer parallelism warnings
@@ -31,16 +86,8 @@ index = VectorStoreIndex.from_documents(
     embed_model=embed_model
 )
 
-# 6. Configure Qianwen API using OpenAI-compatible client
-llm = OpenAI(
-    model="qwen-plus",  # Choose model: qwen-turbo, qwen-plus, or qwen-max
-    api_key=os.getenv("DASHSCOPE_API_KEY"),
-    api_base="https://dashscope.aliyuncs.com/compatible-mode/v1",
-    max_tokens=512,  # Maximum generated tokens
-    temperature=0.7,
-    top_p=0.9,
-    additional_kwargs={"enable_thinking": False}  # Required for Qwen commercial API
-)
+# 6. Configure Qianwen API using custom LLM
+llm = QianwenLLM(model_name="qwen-plus")
 
 # 7. Create query engine
 query_engine = index.as_query_engine(
@@ -49,7 +96,7 @@ query_engine = index.as_query_engine(
 )
 
 # 8. Execute RAG query
-query = "你的查询问题"  # Replace with your specific query
+query = "列出所有问题"  # Replace with your specific query
 response = query_engine.query(query)
 print(f"Query: {query}")
 print(f"Response: {response}")
